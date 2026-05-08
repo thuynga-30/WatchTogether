@@ -47,6 +47,10 @@ const WatchRoom = () => {
   const [showStickerPicker, setShowStickerPicker] = useState(false);
   const [onlineCount, setOnlineCount] = useState(1);
 
+  // recommend
+  const [recommendations, setRecommendations] = useState<any[]>([]);
+  const hasRecommendedRef = useRef(false);
+
   // --- HÀM COPY ---
   const handleCopyRoomId = () => {
     if (!id) return;
@@ -180,6 +184,16 @@ const WatchRoom = () => {
       toast({ title: "Phòng đã kết thúc", description: "Host đã đóng phòng này." });
       navigate("/rooms");
     }
+    else if (data.type === 'AI_RECOMMEND') {
+
+      setRecommendations(data.recommendations || []);
+    }
+    else if (data.type === 'VIDEO_ENDED') {
+
+      setIsEnded(true);
+      setIsPlaying(false);
+
+    }
   };
 
   const getCurrentTime = () => {
@@ -267,10 +281,67 @@ const WatchRoom = () => {
       sendSyncAction('PAUSE');
     }
   };
-  const onEnded = () => {
+  const onEnded = async () => {
+
+    if (hasRecommendedRef.current) return;
+
+    hasRecommendedRef.current = true;
+
     setIsPlaying(false);
     setIsEnded(true);
+
     sendSyncAction('PAUSE');
+
+    // broadcast end screen
+    stompClientRef.current?.send(
+        `/app/chat/${id}`,
+        {},
+        JSON.stringify({
+          type: 'VIDEO_ENDED'
+        })
+    );
+
+    // CHỈ HOST gọi AI
+    if (!isHost) return;
+
+    try {
+
+      const movieTitle = room?.movie?.title;
+
+      const users = currentUser?.id;
+
+      const res = await api.get(
+          `/api/rooms/${id}/recommend`,
+          {
+            params: {
+              movie: movieTitle,
+              users: users
+            }
+          }
+      );
+
+      const recs = res.data;
+
+      console.log("AI RECOMMEND:", recs);
+
+      // update host
+      setRecommendations(recs);
+
+      // broadcast toàn room
+      stompClientRef.current?.send(
+          `/app/chat/${id}`,
+          {},
+          JSON.stringify({
+            type: 'AI_RECOMMEND',
+            recommendations: recs
+          })
+      );
+
+    } catch (e) {
+
+      console.error("AI recommend error", e);
+
+    }
   };
 
   const handleSendMessage = () => {
@@ -303,6 +374,8 @@ const WatchRoom = () => {
   };
 
   const isHost = currentUser?.username === room?.host?.username;
+
+
 
   if (loading) return <div className="h-screen flex items-center justify-center bg-black text-white"><Loader2 className="animate-spin mr-2"/> Đang vào phòng...</div>;
 
@@ -352,20 +425,146 @@ const WatchRoom = () => {
             )}
 
             {isEnded && (
-                <div className="absolute inset-0 z-50 bg-black/95 flex flex-col items-center justify-center text-white">
-                  <h2 className="text-2xl font-bold mb-4">Hết phim</h2>
-                  {isHost ? (
-                      <div className="flex gap-4">
-                        <Button variant="outline" onClick={() => { setIsEnded(false); seekTo(0); sendSyncAction('SEEK', 0); sendSyncAction('PLAY'); }}>
-                          <Play className="mr-2 h-4 w-4"/> Xem lại
-                        </Button>
-                        <Button variant="destructive" onClick={handleEndRoom}>
-                          <Power className="mr-2 h-4 w-4"/> Kết thúc phòng
-                        </Button>
+                <div className="absolute inset-0 z-50 bg-black/95 overflow-y-auto text-white">
+
+                  <div className="max-w-5xl mx-auto py-10 px-6">
+
+                    <h2 className="text-3xl font-bold mb-6 text-center">
+                      🎬 Phim đã kết thúc
+                    </h2>
+
+                    {/* ACTIONS */}
+                    <div className="flex justify-center gap-4 mb-10">
+
+                      {isHost && (
+                          <>
+                            <Button
+                                variant="outline"
+                                onClick={() => {
+                                  hasRecommendedRef.current = false;
+                                  setRecommendations([]);
+                                  setIsEnded(false);
+                                  seekTo(0);
+                                  sendSyncAction('SEEK', 0);
+                                  sendSyncAction('PLAY');
+                                }}
+                            >
+                              <Play className="mr-2 h-4 w-4" />
+                              Xem lại
+                            </Button>
+
+                            <Button
+                                variant="destructive"
+                                onClick={handleEndRoom}
+                            >
+                              <Power className="mr-2 h-4 w-4" />
+                              Kết thúc phòng
+                            </Button>
+                          </>
+                      )}
+
+                    </div>
+
+                    {/* RECOMMEND */}
+                    {/* RECOMMEND */}
+                    <div className="mt-8 w-full max-w-6xl px-6">
+
+                      <div className="flex items-center justify-between mb-8">
+                        <div>
+                          <h2 className="text-3xl font-bold">
+                            🍿 Gợi ý phim tiếp theo
+                          </h2>
+
+                          <p className="text-zinc-400 mt-2">
+                            AI đề xuất phim phù hợp với phòng xem hiện tại
+                          </p>
+                        </div>
                       </div>
-                  ) : (
-                      <p className="text-gray-400">Cảm ơn bạn đã xem!</p>
-                  )}
+
+                      {recommendations.length === 0 ? (
+
+                          <div className="text-center py-24">
+                            <Loader2 className="h-12 w-12 animate-spin mx-auto text-primary mb-5" />
+
+                            <p className="text-zinc-400 text-lg animate-pulse">
+                              AI đang phân tích sở thích người xem...
+                            </p>
+                          </div>
+
+                      ) : (
+
+                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-6">
+
+                            {recommendations.map((movie, index) => (
+
+                                <div
+                                    key={index}
+                                    className=" group relative rounded-2xl overflow-hidden bg-zinc-900 border border-zinc-800 hover:border-primary/50
+                                      transition-all duration-300 hover:-translate-y-2 hover:shadow-2xl hover:shadow-primary/20">
+
+                                  {/* POSTER */}
+                                  <div className="aspect-[2/3] relative overflow-hidden">
+
+                                    <img
+                                        src={
+                                          movie.posterUrl
+                                              ? getImageUrl(movie.posterUrl)
+                                              : "https://placehold.co/300x450?text=No+Poster"
+                                        }
+                                        alt={movie.title}
+                                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 "/>
+
+                                    {/* OVERLAY */}
+                                    <div className=" absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent" />
+
+                                    {/* MATCH SCORE */}
+                                    <div className="absolute top-3 right-3">
+                                      <div className=" px-2 py-1 rounded-full text-xs font-bold bg-primary/90 text-white backdrop-blur-md">
+                                        {Math.round((movie.score || 0) * 100)}% Match
+                                      </div>
+                                    </div>
+
+                                    {/* PLAY BUTTON HOVER */}
+                                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+
+                                      <div className=" w-16 h-16 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center border border-white/30">
+                                        <Play className="w-8 h-8 text-white fill-white ml-1" />
+                                      </div>
+                                    </div>
+
+                                  </div>
+
+                                  {/* CONTENT */}
+                                  <div className="p-4">
+
+                                    {/* TITLE */}
+                                    <h3 className=" text-white font-bold text-base line-clamp-2 min-h-[48px] group-hover:text-primary transition-colors">
+                                      {movie.title}
+                                    </h3>
+
+                                    {/* BUTTON */}
+                                    <Button
+                                        className=" w-full mt-5 font-bold gap-2 "
+                                        size="sm"
+                                    >
+                                      <Play className="h-4 w-4 fill-current" />
+                                      Xem ngay
+                                    </Button>
+
+                                  </div>
+
+                                </div>
+
+                            ))}
+
+                          </div>
+
+                      )}
+
+                    </div>
+
+                  </div>
+
                 </div>
             )}
 

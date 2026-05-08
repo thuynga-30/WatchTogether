@@ -7,7 +7,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 engine = create_engine("mysql+pymysql://root:1234@localhost/watchtogether")
 
 # Load data
-movies = pd.read_sql("SELECT id, title, description FROM movies", engine)
+movies = pd.read_sql("SELECT * FROM movies", engine)
 
 ratings = pd.read_sql("""
 SELECT u.id as user_id, m.title, r.rating
