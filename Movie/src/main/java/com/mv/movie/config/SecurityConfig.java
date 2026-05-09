@@ -40,7 +40,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/movies/ai/recommend/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/movies/**", "/api/categories/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/categories/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/reviews/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/reviews/**","/api/rooms/**").permitAll()
 
                         // Admin
                         .requestMatchers("/api/admin/**").hasAuthority("admin")

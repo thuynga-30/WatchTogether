@@ -2,7 +2,7 @@ import pandas as pd
 from sqlalchemy import create_engine
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-
+from utils import normalize_text
 
 engine = create_engine("mysql+pymysql://root:1234@localhost/watchtogether")
 
@@ -23,5 +23,10 @@ movies['description'] = movies['description'].fillna("")
 
 tfidf_matrix = tfidf.fit_transform(movies['description'])
 
-indices = pd.Series(movies.index, index=movies['title']).drop_duplicates()
+movies['normalized_title'] = movies['title'].apply(normalize_text)
+
+indices = pd.Series(
+    movies.index,
+    index=movies['normalized_title']
+).drop_duplicates()
 

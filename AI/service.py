@@ -1,7 +1,31 @@
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
-from model import movies, ratings, tfidf_matrix, indices
 
+from model import movies, ratings, tfidf_matrix, indices
+from utils import normalize_text
+
+
+def find_movie_index(title: str):
+    """
+    Tìm index của phim trong indices.
+    Thử exact match trước, sau đó fallback fuzzy (contains).
+    Trả về (index, normalized_title) hoặc (None, None) nếu không tìm thấy.
+    """
+    normalized = normalize_text(title)
+
+    # --- 1. Exact match ---
+    if normalized in indices:
+        return indices[normalized], normalized
+
+    # --- 2. Fallback: tìm key nào trong indices chứa chuỗi này ---
+    #    Hữu ích khi title bị encode lạ hoặc có ký tự thừa
+    for key in indices.index:
+        if key == normalized:          # đã check ở trên
+            continue
+        if normalized in key or key in normalized:
+            return indices[key], key
+
+    return None, None
 
 # =========================
 # BUILD USER PROFILE
@@ -9,11 +33,13 @@ from model import movies, ratings, tfidf_matrix, indices
 def build_user_profile(user_data):
 
     user_vector = np.zeros(tfidf_matrix.shape[1])
+
     total_weight = 0
 
     for _, row in user_data.iterrows():
 
-        title = row['title']
+        title = normalize_text(row['title'])
+
         rating = row['rating']
 
         if title in indices:
@@ -23,9 +49,11 @@ def build_user_profile(user_data):
             weight = rating / 5
 
             user_vector += tfidf_matrix[idx].toarray()[0] * weight
+
             total_weight += weight
 
     if total_weight > 0:
+
         user_vector /= total_weight
 
     return user_vector
@@ -48,7 +76,10 @@ def recommend_movies(user_id, top_n=10):
         tfidf_matrix
     )[0]
 
-    watched = set(user_data['title'])
+    watched = set(
+        user_data['title']
+        .apply(normalize_text)
+    )
 
     results = []
 
@@ -56,14 +87,15 @@ def recommend_movies(user_id, top_n=10):
 
         title = movies.iloc[i]['title']
 
-        if title in watched:
+        normalized_title = normalize_text(title)
+
+        if normalized_title in watched:
             continue
 
         final_score = 0.7 * sim
 
         if final_score > 0.1:
 
-            # ===== LẤY POSTER =====
             poster = ""
 
             if 'poster' in movies.columns:
@@ -72,23 +104,29 @@ def recommend_movies(user_id, top_n=10):
             elif 'poster_url' in movies.columns:
                 poster = movies.iloc[i].get('poster_url', '')
 
-            # ===== LẤY GENRE =====
-            genre = "Unknown"
+            category = "Unknown"
 
-            if 'genre' in movies.columns:
-                genre = movies.iloc[i].get('genre', 'Unknown')
+            if 'category' in movies.columns:
+                category = movies.iloc[i].get('category', 'Unknown')
+
+            elif 'genre' in movies.columns:
+                category = movies.iloc[i].get('genre', 'Unknown')
 
             elif 'genres' in movies.columns:
-                genre = movies.iloc[i].get('genres', 'Unknown')
+                category = movies.iloc[i].get('genres', 'Unknown')
 
             results.append({
+
                 "id": int(movies.iloc[i].get('id', 0)),
+
                 "title": title,
 
                 "score": round(float(final_score), 3),
 
                 "posterUrl": poster,
-                "genre": genre
+
+                "genre": category
+
             })
 
     results = sorted(
@@ -106,11 +144,14 @@ def recommend_movies(user_id, top_n=10):
 def build_group_profile(user_ids):
 
     group_vector = np.zeros(tfidf_matrix.shape[1])
+
     count = 0
 
     for user_id in user_ids:
 
-        user_data = ratings[ratings['user_id'] == user_id]
+        user_data = ratings[
+            ratings['user_id'] == user_id
+        ]
 
         if user_data.empty:
             continue
@@ -118,6 +159,7 @@ def build_group_profile(user_ids):
         user_vector = build_user_profile(user_data)
 
         group_vector += user_vector
+
         count += 1
 
     if count > 0:
@@ -133,23 +175,21 @@ room_signals = {}
 
 
 def update_room_signal(room_id, movie_title, action):
-    """
-    action:
-    play, pause, complete
-    """
 
     if room_id not in room_signals:
         room_signals[room_id] = {}
 
-    if movie_title not in room_signals[room_id]:
+    normalized_title = normalize_text(movie_title)
 
-        room_signals[room_id][movie_title] = {
+    if normalized_title not in room_signals[room_id]:
+
+        room_signals[room_id][normalized_title] = {
             "play": 0,
             "pause": 0,
             "complete": 0
         }
 
-    room_signals[room_id][movie_title][action] += 1
+    room_signals[room_id][normalized_title][action] += 1
 
 
 def get_realtime_score(room_id, title):
@@ -157,10 +197,12 @@ def get_realtime_score(room_id, title):
     if room_id not in room_signals:
         return 0
 
-    if title not in room_signals[room_id]:
+    normalized_title = normalize_text(title)
+
+    if normalized_title not in room_signals[room_id]:
         return 0
 
-    data = room_signals[room_id][title]
+    data = room_signals[room_id][normalized_title]
 
     score = (
         data["play"] * 0.2
@@ -176,7 +218,17 @@ def get_realtime_score(room_id, title):
 # =========================
 def get_popularity(title):
 
-    movie_ratings = ratings[ratings['title'] == title]
+    normalized_title = normalize_text(title)
+
+    temp = ratings.copy()
+
+    temp['normalized_title'] = temp['title'].apply(
+        normalize_text
+    )
+
+    movie_ratings = temp[
+        temp['normalized_title'] == normalized_title
+    ]
 
     if movie_ratings.empty:
         return 0
@@ -213,14 +265,24 @@ def recommend_for_room_realtime(
     user_ids=None,
     top_n=10
 ):
+    print("INPUT:", current_movie)
 
-    if not current_movie or current_movie not in indices:
+    normalized_movie, resolved_key = None, None
+
+    # Dùng helper thay vì lookup thẳng
+    idx_result, resolved_key = find_movie_index(current_movie)
+
+    if idx_result is None:
+        print("KHÔNG TÌM THẤY PHIM TRONG INDICES:", current_movie)
         return []
+
+    normalized_movie = resolved_key
+    print("RESOLVED KEY:", normalized_movie)
 
     if not room_id:
         return []
 
-    current_idx = indices[current_movie]
+    current_idx = idx_result
 
     content_scores = cosine_similarity(
         tfidf_matrix[current_idx].reshape(1, -1),
@@ -229,17 +291,12 @@ def recommend_for_room_realtime(
 
     # ===== GROUP PROFILE =====
     group_vector = np.zeros(tfidf_matrix.shape[1])
-
     count = 0
 
     if user_ids:
-
         for uid in user_ids:
-
             user_data = ratings[ratings['user_id'] == uid]
-
             if not user_data.empty:
-
                 group_vector += build_user_profile(user_data)
                 count += 1
 
@@ -249,17 +306,14 @@ def recommend_for_room_realtime(
     results = []
 
     for i, content_score in enumerate(content_scores):
-
         title = movies.iloc[i]['title']
+        normalized_title = normalize_text(title)
 
-        if title == current_movie:
+        if normalized_title == normalized_movie:
             continue
 
         # ===== USER SCORE =====
-        user_score = 0
-
-        if count > 0:
-            user_score = get_user_score(group_vector, i)
+        user_score = get_user_score(group_vector, i) if count > 0 else 0
 
         # ===== POPULARITY =====
         popularity = get_popularity(title)
@@ -276,51 +330,28 @@ def recommend_for_room_realtime(
         )
 
         if final > 0.15:
-
-            # ===== POSTER =====
-            poster = ""
-
-            if 'poster' in movies.columns:
-                poster = movies.iloc[i].get('poster', '')
-
-            elif 'poster_url' in movies.columns:
-                poster = movies.iloc[i].get('poster_url', '')
-
-            # ===== GENRE =====
-            genre = "Unknown"
-
-            if 'genre' in movies.columns:
-                genre = movies.iloc[i].get('genre', 'Unknown')
-
-            elif 'genres' in movies.columns:
-                genre = movies.iloc[i].get('genres', 'Unknown')
+            poster = (
+                movies.iloc[i].get('poster', '')
+                or movies.iloc[i].get('poster_url', '')
+            )
+            category = (
+                movies.iloc[i].get('category')
+                or movies.iloc[i].get('genre')
+                or movies.iloc[i].get('genres')
+                or 'Unknown'
+            )
 
             results.append({
-
-                "id": int(movies.iloc[i].get('id', 0)),
-
-                "title": title,
-
-                "score": round(float(final), 3),
-
-                "posterUrl": poster,
-
-                "genre": genre,
-
-                "content": round(float(content_score), 3),
-
-                "user": round(float(user_score), 3),
-
+                "id":         int(movies.iloc[i].get('id', 0)),
+                "title":      title,
+                "score":      round(float(final), 3),
+                "posterUrl":  poster,
+                "genre":      category,
+                "content":    round(float(content_score), 3),
+                "user":       round(float(user_score), 3),
                 "popularity": round(float(popularity), 3),
-
-                "realtime": round(float(realtime), 3)
-
+                "realtime":   round(float(realtime), 3),
             })
 
-    results = sorted(
-        results,
-        key=lambda x: x['score'],
-        reverse=True
-    )
-
+    results.sort(key=lambda x: x['score'], reverse=True)
     return results[:top_n]

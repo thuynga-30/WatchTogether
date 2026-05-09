@@ -1,5 +1,6 @@
 from flask import Flask, jsonify, request
 from service import recommend_movies, recommend_for_room_realtime
+from urllib.parse import unquote
 
 app = Flask(__name__)
 
@@ -17,19 +18,12 @@ def recommend(user_id):
 def recommend_room_realtime_api():
     try:
         room_id = request.args.get('roomId')
-        movie = request.args.get('movie')
-        users = request.args.get('users')
+        movie   = unquote(request.args.get('movie', ''))  # ← thêm unquote
+        users   = request.args.get('users')
 
-        user_ids = None
-        if users:
-            user_ids = list(map(int, users.split(',')))
+        user_ids = list(map(int, users.split(','))) if users else None
 
-        recs = recommend_for_room_realtime(
-            room_id,
-            movie,
-            user_ids
-        )
-
+        recs = recommend_for_room_realtime(room_id, movie, user_ids)
         return jsonify(recs)
 
     except Exception as e:

@@ -167,8 +167,8 @@ public class SocketController {
                 // Xóa comment khỏi DB
                 commentRepository.delete(comment);
 
-                 Rating rating = ratingRepository.findByUserAndMovie(comment.getUser(),comment.getMovie()).orElse(null);
-                 if(rating != null) ratingRepository.delete(rating);
+                Rating rating = ratingRepository.findByUserAndMovie(comment.getUser(),comment.getMovie()).orElse(null);
+                if(rating != null) ratingRepository.delete(rating);
 
                 // Tính lại điểm trung bình (phòng trường hợp có xóa rating)
                 Double newAvg = ratingRepository.getAverageRating(Long.valueOf(movieId));
