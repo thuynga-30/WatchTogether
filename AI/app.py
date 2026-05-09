@@ -18,7 +18,7 @@ def recommend(user_id):
 def recommend_room_realtime_api():
     try:
         room_id = request.args.get('roomId')
-        movie   = unquote(request.args.get('movie', ''))  # ← thêm unquote
+        movie   = unquote(request.args.get('movie', ''))  
         users   = request.args.get('users')
 
         user_ids = list(map(int, users.split(','))) if users else None
