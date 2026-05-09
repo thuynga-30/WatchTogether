@@ -6,30 +6,25 @@ from utils import normalize_text
 
 
 def find_movie_index(title: str):
-    """
-    Tìm index của phim trong indices.
-    Thử exact match trước, sau đó fallback fuzzy (contains).
-    Trả về (index, normalized_title) hoặc (None, None) nếu không tìm thấy.
-    """
+   
     normalized = normalize_text(title)
 
-    # --- 1. Exact match ---
+
     if normalized in indices:
         return indices[normalized], normalized
 
-    # --- 2. Fallback: tìm key nào trong indices chứa chuỗi này ---
-    #    Hữu ích khi title bị encode lạ hoặc có ký tự thừa
+    # Fallback: tìm key nào trong indices chứa chuỗi này 
+    
     for key in indices.index:
-        if key == normalized:          # đã check ở trên
+        if key == normalized:          
             continue
         if normalized in key or key in normalized:
             return indices[key], key
 
     return None, None
 
-# =========================
 # BUILD USER PROFILE
-# =========================
+
 def build_user_profile(user_data):
 
     user_vector = np.zeros(tfidf_matrix.shape[1])
@@ -59,9 +54,8 @@ def build_user_profile(user_data):
     return user_vector
 
 
-# =========================
 # USER RECOMMEND
-# =========================
+
 def recommend_movies(user_id, top_n=10):
 
     user_data = ratings[ratings['user_id'] == user_id]
@@ -138,9 +132,9 @@ def recommend_movies(user_id, top_n=10):
     return results[:top_n]
 
 
-# =========================
+
 # BUILD GROUP PROFILE
-# =========================
+
 def build_group_profile(user_ids):
 
     group_vector = np.zeros(tfidf_matrix.shape[1])
@@ -168,9 +162,8 @@ def build_group_profile(user_ids):
     return group_vector
 
 
-# =========================
 # REALTIME ROOM SIGNALS
-# =========================
+
 room_signals = {}
 
 
@@ -213,9 +206,8 @@ def get_realtime_score(room_id, title):
     return max(0, min(score, 1))
 
 
-# =========================
 # POPULARITY SCORE
-# =========================
+
 def get_popularity(title):
 
     normalized_title = normalize_text(title)
@@ -238,9 +230,8 @@ def get_popularity(title):
     return avg / 5
 
 
-# =========================
 # USER SCORE
-# =========================
+
 def get_user_score(group_vector, movie_index):
 
     if np.linalg.norm(group_vector) == 0:
@@ -256,9 +247,8 @@ def get_user_score(group_vector, movie_index):
     return sim
 
 
-# =========================
 # ROOM REALTIME RECOMMEND
-# =========================
+
 def recommend_for_room_realtime(
     room_id,
     current_movie,
@@ -269,7 +259,6 @@ def recommend_for_room_realtime(
 
     normalized_movie, resolved_key = None, None
 
-    # Dùng helper thay vì lookup thẳng
     idx_result, resolved_key = find_movie_index(current_movie)
 
     if idx_result is None:
@@ -289,7 +278,7 @@ def recommend_for_room_realtime(
         tfidf_matrix
     )[0]
 
-    # ===== GROUP PROFILE =====
+    # GROUP PROFILE 
     group_vector = np.zeros(tfidf_matrix.shape[1])
     count = 0
 
@@ -312,16 +301,16 @@ def recommend_for_room_realtime(
         if normalized_title == normalized_movie:
             continue
 
-        # ===== USER SCORE =====
+        # USER SCORE 
         user_score = get_user_score(group_vector, i) if count > 0 else 0
 
-        # ===== POPULARITY =====
+        #POPULARITY
         popularity = get_popularity(title)
 
-        # ===== REALTIME =====
+        #REALTIME 
         realtime = get_realtime_score(room_id, title)
 
-        # ===== FINAL SCORE =====
+        # FINAL SCORE
         final = (
             0.4 * content_score +
             0.3 * user_score +
